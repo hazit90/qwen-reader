@@ -21,6 +21,9 @@ final class SetupWindow {
         }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
+        // A menu bar app isn't always allowed to activate itself, and this window must not open
+        // hidden behind whatever the user is working in.
+        window?.orderFrontRegardless()
     }
 
     func close() {
@@ -124,8 +127,29 @@ struct SetupView: View {
 
     // MARK: - Installed
 
+    /// Shown until macOS lets the app see the selection, since without it reading silently fails.
+    @ViewBuilder
+    private var accessibilityNotice: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Qwen Reader needs Accessibility access", systemImage: "lock.shield.fill")
+                .font(.headline)
+            Text("macOS asks for this before an app can see the text you select. Turn on Qwen Reader under Privacy & Security › Accessibility.")
+            Text("If Qwen Reader is already switched on there but reading still doesn't work, the entry belongs to an older copy of the app: select it, remove it with the – button, then add this copy again.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Open Accessibility Settings…") { app.requestAccessibilityAccess() }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+    }
+
     @ViewBuilder
     private var installed: some View {
+        if !app.accessibilityTrusted {
+            accessibilityNotice
+        }
         switch app.modelState {
         case .loading, .notLoaded:
             HStack(spacing: 10) {
@@ -141,22 +165,18 @@ struct SetupView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button("Delete Model…") { app.confirmDeleteModel() }
         case .ready:
-            Label("Ready to read", systemImage: "checkmark.circle.fill")
-                .font(.headline)
-                .foregroundStyle(.green)
+            if app.accessibilityTrusted {
+                Label("Ready to read", systemImage: "checkmark.circle.fill")
+                    .font(.headline)
+                    .foregroundStyle(.green)
+            }
             VStack(alignment: .leading, spacing: 8) {
                 Label("Select text in any app, then press ⌃⌥S or click the icon in the menu bar. Do the same again to stop.", systemImage: "text.cursor")
                 Label("Right-click the menu bar icon for voices, speed and language.", systemImage: "menubar.arrow.up.rectangle")
-                if !app.accessibilityTrusted {
-                    Label("macOS needs your permission before Qwen Reader can see the text you select.", systemImage: "lock.shield")
-                }
             }
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             HStack {
-                if !app.accessibilityTrusted {
-                    Button("Allow Accessibility Access…") { app.requestAccessibilityAccess() }
-                }
                 Button("Add Your Voice…") {
                     VoicesWindow.shared.show(app: app)
                     close()

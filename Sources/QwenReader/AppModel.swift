@@ -179,7 +179,9 @@ final class AppModel {
 
         if library.isInstalled {
             if !accessibilityTrusted {
+                // Reading can't work without it, so say so up front rather than failing quietly later.
                 SelectionReader.requestAccess()
+                SetupWindow.shared.show(app: self)
             }
             preloadSelectedVoice()
         } else if !library.adoptExistingDownload() {

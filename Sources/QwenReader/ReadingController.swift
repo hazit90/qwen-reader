@@ -57,8 +57,10 @@ final class ReadingController {
     func readSelection() {
         guard let app, app.requireModel() else { return }
         guard SelectionReader.isTrusted else {
+            // The system prompt only appears the first time, so always explain in a window too.
             SelectionReader.requestAccess()
-            app.flash("Allow Qwen Reader in Accessibility settings, then try again.")
+            app.flash("Qwen Reader needs Accessibility access to see the selected text.")
+            SetupWindow.shared.show(app: app)
             return
         }
         Task {
