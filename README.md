@@ -93,12 +93,13 @@ several seconds.
 
 | | Default voice | Cloned voice |
 |---|---|---|
-| Time to first audio | ~0.3–0.4 s | ~0.4–0.9 s |
-| Generation speed | ~0.44× real time | ~0.96× real time |
-| Peak memory while speaking | ~5.7 GB | ~5.7 GB |
+| Time to first audio | ~0.2–0.4 s | ~0.3–0.6 s |
+| Generation speed | ~0.4× real time | ~0.4× real time |
+| Peak memory while speaking | ~4 GB | ~4–5.5 GB, more for longer clips |
 
-Anything below 1× keeps up with playback at normal speed. A cloned voice is only just fast
-enough: it may stutter when the Mac is busy or at faster playback speeds.
+Anything below 1× keeps up with playback, so at 0.4× there is room to spare even at 1.5× speed.
+If the Mac is too busy for generation to keep up, playback waits briefly for audio to build up
+instead of stuttering.
 
 ## Building
 

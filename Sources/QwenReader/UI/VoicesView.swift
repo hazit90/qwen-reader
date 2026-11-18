@@ -102,7 +102,7 @@ struct VoicesView: View {
         } header: {
             Text("Add a Voice")
         } footer: {
-            Text("Use 5–15 seconds of clear speech from one person, with no music or background noise. A cloned voice takes about twice as long to generate as the default voice.")
+            Text("Use 5–15 seconds of clear speech from one person, with no music or background noise.")
                 .foregroundStyle(.secondary)
         }
     }

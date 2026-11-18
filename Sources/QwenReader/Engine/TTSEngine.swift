@@ -7,7 +7,7 @@ import ReaderCore
 
 /// The voice to speak with.
 enum SpeechVoice: Sendable, Hashable {
-    /// The model's own voice; needs no reference clip and generates about twice as fast as real time.
+    /// The model's own voice; needs no reference clip.
     case standard
     /// A voice cloned from a reference clip and its exact transcript.
     case cloned(id: UUID, audioURL: URL, transcript: String)
@@ -35,6 +35,8 @@ actor TTSEngine {
 
     private let log = Logger(subsystem: "io.github.hazit90.QwenReader", category: "TTSEngine")
     private var model: Qwen3TTSModel?
+    /// The floating-point type of the model's weights, which is bfloat16 for the standard model.
+    private var weightType: DType?
     private var conditioningCache: [String: Qwen3TTSModel.Qwen3TTSReferenceConditioning] = [:]
     private var lastCancellation: ContinuousClock.Instant?
     private var isGenerating = false
@@ -50,7 +52,10 @@ actor TTSEngine {
         if model != nil { return }
 
         let start = ContinuousClock.now
-        model = try await Qwen3TTSModel.fromModelDirectory(directory)
+        let loaded = try await Qwen3TTSModel.fromModelDirectory(directory)
+        model = loaded
+        weightType = loaded.parameters().flattened()
+            .first { $0.0.hasPrefix("talker.") && $0.1.dtype.isFloatingPoint }?.1.dtype
         do {
             try await speak("Warming up.", voice: .standard, language: "english") { _ in }
         } catch {
@@ -59,11 +64,12 @@ actor TTSEngine {
             throw error
         }
         Memory.clearCache()
-        log.info("Model ready in \(ContinuousClock.now - start, privacy: .public)")
+        log.info("Model ready in \(ContinuousClock.now - start, privacy: .public), weights \(String(describing: self.weightType), privacy: .public)")
     }
 
     func unload() {
         model = nil
+        weightType = nil
         conditioningCache.removeAll()
         didWarmUpCloning = false
         Memory.clearCache()
@@ -127,9 +133,29 @@ actor TTSEngine {
         }
     }
 
-    /// Releases MLX's cached GPU buffers. Peak use while speaking is about 5.7 GB.
+    /// Releases MLX's cached GPU buffers. Peak use while speaking is 4–5.5 GB.
     func trimMemory() {
         Memory.clearCache()
+    }
+
+    /// The library returns the voice's speaker embedding as float32. Mixed into the model's
+    /// 16-bit inputs it promotes every later calculation to float32, which halves generation
+    /// speed (0.8× real time instead of 0.4× on an M1 Max), so convert it to the weights' type.
+    private func matchingWeightType(
+        _ conditioning: Qwen3TTSModel.Qwen3TTSReferenceConditioning
+    ) -> Qwen3TTSModel.Qwen3TTSReferenceConditioning {
+        guard let weightType, let embedding = conditioning.speakerEmbedding, embedding.dtype != weightType else {
+            return conditioning
+        }
+        let converted = embedding.asType(weightType)
+        eval(converted)
+        return Qwen3TTSModel.Qwen3TTSReferenceConditioning(
+            speakerEmbedding: converted,
+            referenceSpeechCodes: conditioning.referenceSpeechCodes,
+            referenceTextTokenIDs: conditioning.referenceTextTokenIDs,
+            resolvedLanguage: conditioning.resolvedLanguage,
+            codecLanguageID: conditioning.codecLanguageID
+        )
     }
 
     private func conditioning(
@@ -142,9 +168,9 @@ actor TTSEngine {
 
         let start = ContinuousClock.now
         let (_, audio) = try loadAudioArray(from: audioURL, sampleRate: model.sampleRate)
-        let conditioning = try model.prepareReferenceConditioning(
+        let conditioning = matchingWeightType(try model.prepareReferenceConditioning(
             refAudio: audio, refText: transcript, language: language
-        )
+        ))
         conditioningCache[key] = conditioning
         log.info("Prepared voice \(id, privacy: .public) for \(language, privacy: .public) in \(ContinuousClock.now - start, privacy: .public)")
         return conditioning

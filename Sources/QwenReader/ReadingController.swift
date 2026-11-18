@@ -92,7 +92,8 @@ final class ReadingController {
         isPaused = false
         log.info("Reading \(text.count) characters in \(chunks.count) chunk(s)")
 
-        task = Task {
+        // Generation has to keep ahead of playback, so don't let background work crowd it out.
+        task = Task(priority: .userInitiated) {
             // The engine must finish (or abandon) the previous read before it can start this one.
             await previous?.value
             await run(chunks, readID: readID, app: app)
@@ -148,12 +149,15 @@ final class ReadingController {
                     cache.store(chunkSamples, for: key)
                 }
             }
+            app.player.finishStream()
+            // The model outputs 24 kHz. Generation that takes longer than the audio lasts can't
+            // keep up with playback.
+            let audioSeconds = Double(samplesDelivered) / 24_000
+            log.info("Generated \(audioSeconds, format: .fixed(precision: 1), privacy: .public) s of audio in \(ContinuousClock.now - self.readStart, privacy: .public)")
             while app.player.hasQueuedAudio {
                 try await Task.sleep(for: .milliseconds(100))
             }
-            // The model outputs 24 kHz. Elapsed time well beyond first audio + audio length means gaps.
-            let audioSeconds = Double(samplesDelivered) / 24_000
-            log.info("Finished reading \(audioSeconds, format: .fixed(precision: 1), privacy: .public) s of audio after \(ContinuousClock.now - self.readStart, privacy: .public)")
+            log.info("Finished reading after \(ContinuousClock.now - self.readStart, privacy: .public), waiting for audio \(app.player.rebufferCount, privacy: .public) time(s)")
             finish(readID)
         } catch is CancellationError {
             // Stopped or replaced by a newer read, which owns the state now.
